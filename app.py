@@ -33,18 +33,26 @@ with col2:
 
 if existing_file and new_file:
     try:
-        # Load CSVs with error_bad_lines=False to skip problematic lines
+        # Load CSVs with error handling
         existing_df = pd.read_csv(existing_file, on_bad_lines='skip')
         new_df = pd.read_csv(new_file, on_bad_lines='skip')
 
-        # Ensure column exists
+        # Validate required column
         if 'Customer Name' not in existing_df.columns or 'Customer Name' not in new_df.columns:
             st.error("⚠️ Both CSVs must contain a column named 'Customer Name'")
         else:
             with st.spinner("Matching customers..."):
-                # Normalize names
+                # Common business terms to ignore during matching
+                COMMON_WORDS = {
+                    "private limited", "pvt ltd", "limited", "company", "corporation",
+                    "group", "ltd", "inc", "llc", "plc", "pte", "gmbh", "ag"
+                }
+
+                # Normalize names: remove common words and standardize format
                 def normalize(name):
-                    return str(name).lower().replace('private limited', 'pvt ltd').strip()
+                    name = str(name).lower()
+                    tokens = [w for w in name.split() if w not in COMMON_WORDS]
+                    return " ".join(tokens).strip()
 
                 existing_df['normalized'] = existing_df['Customer Name'].apply(normalize)
                 new_df['normalized'] = new_df['Customer Name'].apply(normalize)
@@ -57,7 +65,7 @@ if existing_file and new_file:
                 for idx, row in new_df.iterrows():
                     new_name = row['normalized']
                     new_customer = row['Customer Name']
-                    
+
                     match_result = process.extractOne(new_name, existing_names, scorer=fuzz.token_set_ratio)
 
                     if match_result:
@@ -68,8 +76,9 @@ if existing_file and new_file:
 
                     match_type = "Genuine New"
                     if score and score >= 85:
-                        if matched_row and matched_row['Customer Name'].lower() == new_name.lower():
-                            match_type = "Existing"
+                        partial_score = fuzz.partial_ratio(new_name, match_name)
+                        if partial_score >= 85:
+                            match_type = "Exact Match"
                         else:
                             match_type = "Name Change / Variation"
 
