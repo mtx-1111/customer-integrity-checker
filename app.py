@@ -57,8 +57,8 @@ if existing_file and new_file:
                 for idx, row in new_df.iterrows():
                     new_name = row['normalized']
                     new_customer = row['Customer Name']
-
-                    match_result = process.extractOne(new_name, existing_names, scorer=fuzz.token_sort_ratio)
+                    
+                    match_result = process.extractOne(new_name, existing_names, scorer=fuzz.token_set_ratio)
 
                     if match_result:
                         match_name, score, _ = match_result
