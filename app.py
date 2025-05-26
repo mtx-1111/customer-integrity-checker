@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 from rapidfuzz import process, fuzz
-import openpyxl
 
 # Page config
 st.set_page_config(page_title="Customer Integrity Checker", layout="wide")
@@ -34,18 +33,18 @@ with col2:
 
 if existing_file and new_file:
     try:
-        # Load CSVs
-        existing_df = pd.read_csv(existing_file)
-        new_df = pd.read_csv(new_file)
+        # Load CSVs with error_bad_lines=False to skip problematic lines
+        existing_df = pd.read_csv(existing_file, on_bad_lines='skip')
+        new_df = pd.read_csv(new_file, on_bad_lines='skip')
 
-        # Validate required column
+        # Ensure column exists
         if 'Customer Name' not in existing_df.columns or 'Customer Name' not in new_df.columns:
             st.error("⚠️ Both CSVs must contain a column named 'Customer Name'")
         else:
             with st.spinner("Matching customers..."):
                 # Normalize names
                 def normalize(name):
-                    return name.lower().replace('private limited', 'pvt ltd').strip()
+                    return str(name).lower().replace('private limited', 'pvt ltd').strip()
 
                 existing_df['normalized'] = existing_df['Customer Name'].apply(normalize)
                 new_df['normalized'] = new_df['Customer Name'].apply(normalize)
@@ -59,12 +58,16 @@ if existing_file and new_file:
                     new_name = row['normalized']
                     new_customer = row['Customer Name']
 
-                    match_name, score = process.extractOne(new_name, existing_names, scorer=fuzz.token_sort_ratio)
+                    match_result = process.extractOne(new_name, existing_names, scorer=fuzz.token_sort_ratio)
 
-                    matched_row = next((item for item in existing_full if item['normalized'] == match_name), None)
+                    if match_result:
+                        match_name, score, _ = match_result
+                        matched_row = next((item for item in existing_full if item['normalized'] == match_name), None)
+                    else:
+                        match_name = score = matched_row = None
 
                     match_type = "Genuine New"
-                    if score >= 85:
+                    if score and score >= 85:
                         if matched_row and matched_row['Customer Name'].lower() == new_name.lower():
                             match_type = "Existing"
                         else:
@@ -73,7 +76,7 @@ if existing_file and new_file:
                     results.append({
                         "New Customer": new_customer,
                         "Matched Existing": matched_row['Customer Name'] if matched_row else "None",
-                        "Match Score": round(score, 2) if score >= 85 else "N/A",
+                        "Match Score": round(score, 2) if score else "N/A",
                         "Match Type": match_type
                     })
 
@@ -94,7 +97,7 @@ if existing_file and new_file:
 
                 excel_buffer = pd.ExcelWriter("matched_customers.xlsx", engine='openpyxl')
                 result_df.to_excel(excel_buffer, index=False)
-                excel_buffer.save()
+                excel_buffer.close()
                 with open("matched_customers.xlsx", "rb") as f:
                     excel_data = f.read()
 
